@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pyscript Toll Calculation</title>
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+    <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body background="WhatsApp Image 2024-07-12 at 22.05.09_e7ea1f87.jpg">
+    <h1 class="heading">TOLL TAX CALCULATOR</h1>
+
+    <py-config>
+        packages = [
+            "simpy",
+            "geopandas",
+            "shapely",
+            "pandas",
+            "matplotlib",
+            "folium"
+        ]
+    </py-config>
+<div class="content">
+        <py-script>
+        #importing all the libraries    
+        import simpy
+        import geopandas as gpd
+        from shapely.geometry import Point, Polygon
+        import pandas as pd
+        import folium
+        import math
+        
+        #Taking the latitude and longitude
+        toll_zones = gpd.GeoDataFrame({
+            'geometry': [Polygon([(-74.0060, 40.7128), (-74.0060, 40.7138), (-74.0050, 40.7138), (-74.0050, 40.7128)])]
+        })
+
+        #defining the starting and ending latitude and longitude 
+        vehicles = pd.DataFrame({
+            'vehicle_id': [1, 2],
+            'start': [(40.7128, -74.0060), (40.7138, -74.0050)],
+            'end': [(40.7306, -73.9352), (40.7618, -73.9794)]
+        })
+
+        user_accounts = {'user_1': 100, 'user_2': 100}
+
+        #using haversine for distance calculation 
+        def haversine(coord1, coord2):
+            lat1, lon1 = coord1
+            lat2, lon2 = coord2
+            R = 6371000  # Radius of Earth in meters
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            delta_phi = math.radians(lat2 - lat1)
+            delta_lambda = math.radians(lon2 - lon1)
+            a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
+        #final total toll calculation
+        def calculate_toll(distance):
+            rate_per_km = 10.0  # Example rate
+            return distance / 1000 * rate_per_km
+ 
+        #toll amount calculation
+        def deduct_toll(user, amount):
+            user_accounts[user] -= amount
+
+        #checkin toll intersection    
+        def check_toll_crossing(vehicle_position):
+            point = Point(vehicle_position[::-1])
+            for _, toll_zone in toll_zones.iterrows():
+                if toll_zone['geometry'].contains(point):
+                    return True
+            return False
+
+        vehicle_movements = []
+        
+        def vehicle(env, vehicle_id, user, start, end, speed):
+            position = start
+            distance = haversine(start, end)
+            travel_time = distance / speed
+            toll_distance = 0
+
+            for _ in range(int(travel_time)):
+                yield env.timeout(1)
+                position = (position[0] + 0.0001, position[1] + 0.0001)
+                if check_toll_crossing(position):
+                    toll_distance += haversine(start, position)
+                    start = position
+
+            toll_charge = calculate_toll(toll_distance)
+            deduct_toll(user, toll_charge)
+            vehicle_movements.append({
+                'vehicle_id': vehicle_id,
+                'user': user,
+                'toll_distance': toll_distance,
+                'toll_charge': toll_charge
+            })
+            print(f'Updated {user} balance : Rs{user_accounts[user]:.2f}')
+
+        def run_simulation():
+            env = simpy.Environment()
+            for index, row in vehicles.iterrows():
+                env.process(vehicle(env, row['vehicle_id'], 'user_1', row['start'], row['end'], speed=10))
+            env.run()
+
+            report = pd.DataFrame(vehicle_movements)
+            display(report)
+
+            map = folium.Map(location=[40.7128, -74.0060], zoom_start=12)
+            for _, toll_zone in toll_zones.iterrows():
+                folium.GeoJson(toll_zone['geometry']).add_to(map)
+            for _, row in vehicles.iterrows():
+                folium.Marker(location=row['start'], popup='Start').add_to(map)
+                folium.Marker(location=row['end'], popup='End').add_to(map)
+            map.save('map.html')
+
+        run_simulation()
+    </py-script>
+    </p>
+</div>
+</body>
+</html>
